@@ -1,0 +1,15 @@
+{
+  "name": "@cerebrachain-v2/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "V2 proof-receipt anchor contracts and isolated tests.",
+  "scripts": {
+    "compile": "node scripts/compile.cjs",
+    "test": "node --test test/NeuroProofReceiptAnchor.test.cjs"
+  },
+  "devDependencies": {
+    "ethers": "6.17.0",
+    "hardhat": "2.29.1",
+    "solc": "0.8.37"
+  }
+}

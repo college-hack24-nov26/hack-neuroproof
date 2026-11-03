@@ -1,0 +1,65 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Frontend
+node_modules/
+dist/
+.next/
+
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# MRI datasets
+/private-hospital-mri/
+*.nii
+*.nii.gz
+*.dcm
+*.tar
+*.zip
+
+# Trained ML models
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.safetensors
+
+# Generated medical data
+uploads/
+outputs/
+reports/generated/
+checkpoints/
+data/
+runs/
+storage/
+*.npz
+*.npy
+
+# Databases
+*.db
+*.sqlite3
+postgres-data/
+
+# Blockchain secrets
+*.zkey
+*.ptau
+*.r1cs
+*.wtns
+*.wasm
+wallets/
+keystore/
+deployments/local.json
+
+# Logs
+*.log
+coverage/
+.coverage
+htmlcov/

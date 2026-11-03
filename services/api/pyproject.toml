@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cerebrachain-api"
+version = "0.1.0"
+description = "FastAPI MRI segmentation service for ZKP-CerebraChain V2"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.14",
+    "fastapi>=0.138",
+    "python-multipart>=0.0.20",
+    "psycopg[binary]>=3.2",
+    "pycryptodome>=3.20",
+    "SQLAlchemy>=2.0",
+    "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.28",
+    "pytest>=9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
