@@ -48,6 +48,7 @@ function makeUpdate(
     artifact_sha256: "a".repeat(64),
     artifact_size_bytes: 1024,
     update_commitment: "b".repeat(64),
+    proof_artifact_sha256: null,
 
     sample_count: 1,
     training_metadata_recorded: true,

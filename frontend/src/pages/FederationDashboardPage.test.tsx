@@ -61,6 +61,7 @@ function makeUpdate(
     artifact_sha256: "a".repeat(64),
     artifact_size_bytes: 1024,
     update_commitment: "b".repeat(64),
+    proof_artifact_sha256: null,
 
     sample_count: 1,
     training_metadata_recorded: true,
@@ -173,6 +174,24 @@ describe("Federation dashboard verification security", () => {
       "Complete for submitted quantized update",
     );
 
+    expect(
+      card.getByText(/Aggregation eligible:/),
+    ).toHaveTextContent("No");
+  });
+
+  it("shows a persisted proof receipt hash without treating it as proof verification", async () => {
+    const receiptHash = "c".repeat(64);
+    const card = await renderUpdate({
+      proof_artifact_sha256: receiptHash,
+      proof_verification_status: "pending_verification",
+      proof_lifecycle: "verification_pending",
+      aggregation_eligible: false,
+    });
+
+    expect(
+      card.getByText(/Proof receipt SHA256:/),
+    ).toHaveTextContent(receiptHash);
+    expect(card.getByText(/Proof:/)).toHaveTextContent("pending verification");
     expect(
       card.getByText(/Aggregation eligible:/),
     ).toHaveTextContent("No");

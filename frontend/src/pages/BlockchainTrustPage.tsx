@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import { Card } from "../components/ui/Card";
 import { PageHeader } from "../components/ui/PageHeader";
 import { apiClient } from "../services/apiClient";
@@ -40,6 +41,92 @@ type TrustSummary = {
   };
   disclaimer: string;
 };
+
+
+// Mirrors the protected V2 receipt-read API response in services/api/app/schemas/trust.py.
+// This is separate from the legacy /trust/summary response above.
+type V2AnchorLookupState =
+  | "unconfigured"
+  | "unavailable"
+  | "chain_id_mismatch"
+  | "contract_code_missing"
+  | "contract_runtime_mismatch"
+  | "invalid_receipt_id"
+  | "invalid_transaction_hash"
+  | "receipt_mismatch"
+  | "receipt_missing"
+  | "receipt_found"
+  | "transaction_missing"
+  | "transaction_pending"
+  | "event_mismatch"
+  | "malformed_rpc_response"
+  | "confirmed";
+
+type V2AnchorReceipt = {
+  federation_round_commitment: string;
+  model_version_commitment: string;
+  hospital_update_commitment: string;
+  proof_artifact_sha256: string;
+  verification_key_id: string;
+  attestation_status: "offchain_groth16_verified";
+  anchored_at: number;
+  anchored_block: number;
+  attested_by: string;
+};
+
+type V2AnchorLookup = {
+  state: V2AnchorLookupState;
+  detail: string;
+  rpc_available: boolean;
+  chain_id: number | null;
+  contract_address: string | null;
+  runtime_bytecode_sha256: string | null;
+  contract_identity_verified: boolean;
+  receipt_id: string | null;
+  receipt: V2AnchorReceipt | null;
+  transaction_hash: string | null;
+  transaction_block_number: number | null;
+  confirmations: number | null;
+  event_verified: boolean;
+  offchain_groth16_verified: boolean;
+  onchain_groth16_verified: false;
+};
+
+const BYTES32_HEX = /^0x[0-9a-fA-F]{64}$/;
+
+const V2_LOOKUP_LABELS: Record<V2AnchorLookupState, string> = {
+  unconfigured: "V2 anchor not configured",
+  unavailable: "Blockchain RPC unavailable",
+  chain_id_mismatch: "Unexpected blockchain network",
+  contract_code_missing: "Contract code missing",
+  contract_runtime_mismatch: "Contract bytecode mismatch",
+  invalid_receipt_id: "Invalid receipt ID",
+  invalid_transaction_hash: "Invalid transaction hash",
+  receipt_mismatch: "Receipt commitments mismatch",
+  receipt_missing: "No on-chain receipt found",
+  receipt_found: "Receipt found; transaction not confirmed by this lookup",
+  transaction_missing: "Transaction not found",
+  transaction_pending: "Transaction awaiting confirmations",
+  event_mismatch: "Receipt event mismatch",
+  malformed_rpc_response: "Invalid blockchain RPC response",
+  confirmed: "Anchoring transaction confirmed",
+};
+
+function v2LookupError(cause: unknown): string {
+  if (typeof cause === "object" && cause !== null && "status" in cause) {
+    const status = (cause as { status: unknown }).status;
+    if (status === 403) {
+      return "Federation Operator access is required for V2 receipt lookup.";
+    }
+    if (status === 401) {
+      return "Your session is unavailable or expired. Sign in to continue.";
+    }
+    if (status === 404) {
+      return "The active backend does not expose the V2 receipt endpoint yet. It may require an approved backend-only restart.";
+    }
+  }
+  return getErrorMessage(cause);
+}
 
 function Status({
   value,
@@ -87,6 +174,55 @@ export function BlockchainTrustPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  // V2 operator-only lookup is independent of the historical trust summary.
+  // Never request on mount: an ordinary Hospital Admin is not a federation operator.
+  const [receiptId, setReceiptId] = useState("");
+  const [transactionHash, setTransactionHash] = useState("");
+  const [lookupResult, setLookupResult] = useState<V2AnchorLookup | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const lookupControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => lookupControllerRef.current?.abort(), []);
+
+  function handleV2Lookup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    lookupControllerRef.current?.abort();
+    lookupControllerRef.current = null;
+    setLookupResult(null);
+    setLookupError(null);
+    setLookupLoading(false);
+
+    const id = receiptId.trim();
+    const tx = transactionHash.trim();
+    if (!BYTES32_HEX.test(id)) {
+      setLookupError("Receipt ID must be 0x followed by exactly 64 hexadecimal characters.");
+      return;
+    }
+    if (tx && !BYTES32_HEX.test(tx)) {
+      setLookupError("Transaction hash must be 0x followed by exactly 64 hexadecimal characters.");
+      return;
+    }
+
+    const controller = new AbortController();
+    lookupControllerRef.current = controller;
+    setLookupLoading(true);
+    const query = tx ? `?transaction_hash=${encodeURIComponent(tx.toLowerCase())}` : "";
+    apiClient
+      .request<V2AnchorLookup>(
+        `/trust/v2/receipts/${encodeURIComponent(id.toLowerCase())}${query}`,
+        { signal: controller.signal },
+      )
+      .then((result) => {
+        if (!controller.signal.aborted) setLookupResult(result);
+      })
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) setLookupError(v2LookupError(cause));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLookupLoading(false);
+      });
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -122,7 +258,7 @@ export function BlockchainTrustPage() {
     <div className="grid gap-6">
       <PageHeader
         title="Blockchain & ZKP Trust"
-        description="Current Hardhat chain checks and historical zero-knowledge proof evidence."
+        description="Read-only V2 receipt lookup and historical blockchain/ZKP evidence."
       />
 
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -138,6 +274,176 @@ export function BlockchainTrustPage() {
           Refresh verification
         </button>
       </div>
+
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-ink">
+              V2 Proof Receipt Lookup
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Read an existing V2 receipt from a pinned blockchain contract.
+              This action is read-only and requires Federation Operator access.
+              It does not submit transactions or verify Groth16 proofs on-chain.
+            </p>
+          </div>
+          <span className="rounded-full border border-violet-400/30 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-200">
+            V2 / Operator-only
+          </span>
+        </div>
+
+        <form onSubmit={handleV2Lookup} className="mt-5 grid gap-4">
+          <div>
+            <label htmlFor="v2-receipt-id" className="block text-sm font-medium text-ink">
+              Receipt ID <span className="text-rose-300">*</span>
+            </label>
+            <input
+              id="v2-receipt-id"
+              type="text"
+              value={receiptId}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setReceiptId(event.target.value)}
+              placeholder="0x… (32-byte receipt identifier)"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={66}
+              required
+              pattern="0x[0-9a-fA-F]{64}"
+              className="mt-2 w-full rounded-lg border border-border bg-slate-900/60 px-3 py-2 font-mono text-sm text-ink outline-none focus:border-violet-400"
+            />
+          </div>
+          <div>
+            <label htmlFor="v2-transaction-hash" className="block text-sm font-medium text-ink">
+              Anchoring transaction hash (optional)
+            </label>
+            <input
+              id="v2-transaction-hash"
+              type="text"
+              value={transactionHash}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setTransactionHash(event.target.value)}
+              placeholder="0x… (include to check transaction and event)"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={66}
+              pattern="0x[0-9a-fA-F]{64}"
+              className="mt-2 w-full rounded-lg border border-border bg-slate-900/60 px-3 py-2 font-mono text-sm text-ink outline-none focus:border-violet-400"
+            />
+            <p className="mt-2 text-xs text-muted">
+              Transaction confirmation cannot be established without a transaction hash.
+              Receipt lookup alone does not prove an anchoring transaction was confirmed.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={lookupLoading}
+              className="rounded-lg border border-violet-400/40 bg-violet-500/20 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {lookupLoading ? "Checking receipt…" : "Check V2 receipt"}
+            </button>
+            <span className="text-xs text-muted">
+              No receipt is queried automatically. The API enforces operator authorization.
+            </span>
+          </div>
+        </form>
+
+        {lookupLoading ? (
+          <p className="mt-5 text-sm text-muted" role="status">
+            Inspecting pinned V2 contract and receipt…
+          </p>
+        ) : null}
+
+        {lookupError ? (
+          <p className="mt-5 rounded-lg border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-200" role="alert">
+            {lookupError}
+          </p>
+        ) : null}
+
+        {lookupResult ? (
+          <div className="mt-6 grid gap-5" aria-live="polite">
+            <div className="rounded-lg border border-border bg-slate-900/40 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                Read-only lookup result
+              </p>
+              <p className={`mt-2 text-base font-semibold ${
+                lookupResult.state === "confirmed"
+                  ? "text-emerald-300"
+                  : lookupResult.state === "receipt_found"
+                    ? "text-cyan-200"
+                    : "text-amber-200"
+              }`}>
+                {V2_LOOKUP_LABELS[lookupResult.state] ?? "Unknown receipt state"}
+              </p>
+              <p className="mt-2 text-sm text-muted">{lookupResult.detail}</p>
+            </div>
+
+            <dl className="grid gap-5 sm:grid-cols-2">
+              <Detail label="Receipt ID" value={lookupResult.receipt_id} />
+              <Detail label="Chain ID" value={lookupResult.chain_id} />
+              <Detail label="Contract address" value={lookupResult.contract_address} />
+              <Detail label="Runtime bytecode SHA256" value={lookupResult.runtime_bytecode_sha256} />
+            </dl>
+
+            <div className="grid gap-3 text-sm text-muted sm:grid-cols-2">
+              <p>
+                RPC: <Status value={lookupResult.rpc_available} success="Connected" failure="Unavailable" />
+              </p>
+              <p>
+                Pinned contract identity: <Status value={lookupResult.contract_identity_verified} success="Verified" failure="Not verified" />
+              </p>
+              <p>
+                Receipt event matches: <Status value={lookupResult.event_verified} success="Yes" failure="Not established" />
+              </p>
+              <p>
+                Anchoring transaction: <Status
+                  value={lookupResult.state === "confirmed" && lookupResult.contract_identity_verified && lookupResult.event_verified}
+                  success="Confirmed by lookup"
+                  failure="Not confirmed by lookup"
+                />
+              </p>
+            </div>
+
+            <dl className="grid gap-5 sm:grid-cols-2">
+              <Detail label="Transaction hash" value={lookupResult.transaction_hash} />
+              <Detail label="Transaction block" value={lookupResult.transaction_block_number} />
+              <Detail label="Confirmations" value={lookupResult.confirmations} />
+            </dl>
+
+            {lookupResult.receipt ? (
+              <div className="rounded-lg border border-border bg-slate-900/40 p-4">
+                <h3 className="font-semibold text-ink">Immutable on-chain receipt metadata</h3>
+                <dl className="mt-5 grid gap-5 sm:grid-cols-2">
+                  <Detail label="Federation round commitment" value={lookupResult.receipt.federation_round_commitment} />
+                  <Detail label="Model version commitment" value={lookupResult.receipt.model_version_commitment} />
+                  <Detail label="Hospital/update commitment" value={lookupResult.receipt.hospital_update_commitment} />
+                  <Detail label="Proof artifact SHA256 (bytes32)" value={lookupResult.receipt.proof_artifact_sha256} />
+                  <Detail label="Verification key identifier" value={lookupResult.receipt.verification_key_id} />
+                  <Detail label="Off-chain verification attestation" value={lookupResult.receipt.attestation_status} />
+                  <Detail label="Anchor block" value={lookupResult.receipt.anchored_block} />
+                  <Detail label="Anchor timestamp (Unix seconds)" value={lookupResult.receipt.anchored_at} />
+                  <Detail label="Attesting address" value={lookupResult.receipt.attested_by} />
+                </dl>
+              </div>
+            ) : null}
+
+            <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-4 text-sm leading-6 text-amber-100">
+              <p className="font-semibold">Verification scope</p>
+              <p className="mt-2">
+                Off-chain Groth16 verification attested by this receipt:{" "}
+                <Status
+                  value={lookupResult.offchain_groth16_verified}
+                  success="Claim recorded on-chain"
+                  failure="No attestation available"
+                />
+                . This read-only lookup does not independently re-run the proof verifier.
+              </p>
+              <p className="mt-2">
+                On-chain Groth16 proof verification: <strong>Not performed</strong>.
+                Blockchain anchoring does not establish MRI training correctness or clinical validity.
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </Card>
 
       {loading ? (
         <Card>

@@ -69,6 +69,7 @@ type SubmittedUpdate = {
   artifact_size_bytes: number | null;
   update_commitment: string | null;
   sample_count: number | null;
+  proof_artifact_sha256: string | null;
   proof_verification_status:
     | "not_submitted"
     | "pending_verification"
@@ -423,6 +424,11 @@ export function FederationDashboardPage() {
                       <p>Aggregation eligible: <YesNo value={update.aggregation_eligible} /></p>
                     </div>
                     {update.artifact_sha256 ? <p className="mt-2 break-all font-mono text-xs text-cyan-200">{update.artifact_sha256}</p> : null}
+                    {update.proof_artifact_sha256 ? (
+                      <p className="mt-2 break-all font-mono text-xs text-cyan-200">
+                        Proof receipt SHA256: {update.proof_artifact_sha256}
+                      </p>
+                    ) : null}
                     {update.rejection_reason ? <p className="mt-2 text-sm text-rose-300">Rejected: {update.rejection_reason}</p> : null}
                   </div>
                 ))}
