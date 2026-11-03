@@ -4,6 +4,7 @@ import { Card } from "../components/ui/Card";
 import { PageHeader } from "../components/ui/PageHeader";
 import { apiClient } from "../services/apiClient";
 import { getErrorMessage } from "../utils/errors";
+import { getV2LookupErrorMessage } from "../utils/trustLookup";
 
 type TrustSummary = {
   network: {
@@ -112,22 +113,6 @@ const V2_LOOKUP_LABELS: Record<V2AnchorLookupState, string> = {
   confirmed: "Anchoring transaction confirmed",
 };
 
-function v2LookupError(cause: unknown): string {
-  if (typeof cause === "object" && cause !== null && "status" in cause) {
-    const status = (cause as { status: unknown }).status;
-    if (status === 403) {
-      return "Federation Operator access is required for V2 receipt lookup.";
-    }
-    if (status === 401) {
-      return "Your session is unavailable or expired. Sign in to continue.";
-    }
-    if (status === 404) {
-      return "The active backend does not expose the V2 receipt endpoint yet. It may require an approved backend-only restart.";
-    }
-  }
-  return getErrorMessage(cause);
-}
-
 function Status({
   value,
   success = "Confirmed",
@@ -174,8 +159,8 @@ export function BlockchainTrustPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
-  // V2 operator-only lookup is independent of the historical trust summary.
-  // Never request on mount: an ordinary Hospital Admin is not a federation operator.
+  // V2 receipt lookup is independent of the historical trust summary.
+  // Never request on mount: an ordinary Hospital Admin is not necessarily a receipt viewer.
   const [receiptId, setReceiptId] = useState("");
   const [transactionHash, setTransactionHash] = useState("");
   const [lookupResult, setLookupResult] = useState<V2AnchorLookup | null>(null);
@@ -217,7 +202,7 @@ export function BlockchainTrustPage() {
         if (!controller.signal.aborted) setLookupResult(result);
       })
       .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setLookupError(v2LookupError(cause));
+        if (!controller.signal.aborted) setLookupError(getV2LookupErrorMessage(cause));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLookupLoading(false);
@@ -283,12 +268,12 @@ export function BlockchainTrustPage() {
             </h2>
             <p className="mt-2 text-sm leading-6 text-muted">
               Read an existing V2 receipt from a pinned blockchain contract.
-              This action is read-only and requires Federation Operator access.
+              This action is read-only and requires server-approved Receipt Viewer access.
               It does not submit transactions or verify Groth16 proofs on-chain.
             </p>
           </div>
           <span className="rounded-full border border-violet-400/30 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-200">
-            V2 / Operator-only
+            V2 / Receipt Viewer
           </span>
         </div>
 
@@ -341,7 +326,7 @@ export function BlockchainTrustPage() {
               {lookupLoading ? "Checking receipt…" : "Check V2 receipt"}
             </button>
             <span className="text-xs text-muted">
-              No receipt is queried automatically. The API enforces operator authorization.
+              No receipt is queried automatically. The API enforces Receipt Viewer authorization.
             </span>
           </div>
         </form>
