@@ -32,8 +32,8 @@ def _ordered_paths(modality_paths: Mapping[str, Path]) -> list[Path]:
     for path in paths:
         if not path.is_file() or path.is_symlink():
             raise MriValidationError("An uploaded MRI file is unavailable.")
-        if not path.name.lower().endswith(".nii.gz"):
-            raise MriValidationError("MRI uploads must use the .nii.gz format.")
+        if not path.name.lower().endswith((".nii", ".nii.gz")):
+            raise MriValidationError("MRI uploads must use the .nii or .nii.gz format.")
     return paths
 
 
