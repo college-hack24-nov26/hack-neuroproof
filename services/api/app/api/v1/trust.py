@@ -28,7 +28,15 @@ from app.modules.trust.v2_anchor_rpc import (
     V2AnchorReceiptInspection,
     V2ProofReceiptAnchorReader,
 )
+from app.modules.trust.v3_anchor_rpc import (
+    V3_ANCHOR_ABI_VERSION,
+    V3_CLASSIFICATION,
+    V3AnchorReceiptInspection,
+    V3ProofReceiptAnchorReader,
+)
 from app.schemas.trust import (
+    V3AnchorReceiptLookupResponse,
+    V3AnchorReceiptMetadataResponse,
     V2AnchorReceiptLookupResponse,
     V2AnchorReceiptMetadataResponse,
 )
@@ -458,6 +466,128 @@ def v2_proof_receipt_lookup(
             onchain_groth16_verified=False,
         )
     return _v2_lookup_response(
+        reader.inspect_receipt(
+            receipt_id=receipt_id,
+            transaction_hash=transaction_hash,
+        )
+    )
+
+
+def build_v3_anchor_reader(settings: Settings) -> V3ProofReceiptAnchorReader | None:
+    """Construct V3 using server-pinned, independent development configuration."""
+    if (
+        not settings.proof_receipt_v3_is_configured
+        or settings.proof_receipt_v3_abi_version != V3_ANCHOR_ABI_VERSION
+    ):
+        return None
+    try:
+        configuration = ProofReceiptAnchorReadConfig(
+            rpc_url=settings.proof_receipt_v3_rpc_url or "",
+            expected_chain_id=settings.proof_receipt_v3_expected_chain_id or 0,
+            contract_address=settings.proof_receipt_v3_contract_address or "",
+            expected_runtime_code_sha256=(
+                settings.proof_receipt_v3_runtime_code_sha256 or ""
+            ),
+            required_confirmations=settings.proof_receipt_v3_required_confirmations,
+        )
+        return V3ProofReceiptAnchorReader(
+            configuration,
+            timeout_seconds=settings.proof_receipt_v3_timeout_seconds,
+        )
+    except ValueError:
+        return None
+
+
+def _v3_lookup_response(
+    inspection: V3AnchorReceiptInspection,
+) -> V3AnchorReceiptLookupResponse:
+    """Describe confirmed chain evidence without independently asserting proof validity."""
+    receipt = None
+    if (
+        inspection.receipt is not None
+        and inspection.contract_identity_verified
+        and inspection.verified_classification == V3_CLASSIFICATION
+    ):
+        anchored = inspection.receipt
+        receipt = V3AnchorReceiptMetadataResponse(
+            federation_round_commitment=anchored.federation_round_commitment,
+            model_version_commitment=anchored.model_version_commitment,
+            hospital_update_commitment=anchored.hospital_update_commitment,
+            proof_artifact_sha256=anchored.proof_artifact_sha256,
+            verification_key_id=anchored.verification_key_id,
+            attestation_status=anchored.attestation_status,
+            anchored_at=anchored.anchored_at,
+            anchored_block=anchored.anchored_block,
+            attested_by=anchored.attested_by,
+        )
+
+    return V3AnchorReceiptLookupResponse(
+        state=inspection.state.value,
+        detail=inspection.detail,
+        rpc_available=inspection.rpc_available,
+        chain_id=inspection.chain_id,
+        contract_address=inspection.contract_address,
+        runtime_bytecode_sha256=inspection.runtime_bytecode_sha256,
+        contract_identity_verified=inspection.contract_identity_verified,
+        receipt_id=inspection.receipt_id,
+        receipt=receipt,
+        transaction_hash=inspection.transaction_hash,
+        transaction_block_number=inspection.transaction_block_number,
+        confirmations=inspection.confirmations,
+        event_verified=inspection.event_verified,
+        verified_classification=inspection.verified_classification,
+        development_only=True,
+        production_eligible=False,
+        offchain_groth16_verified=False,
+        onchain_groth16_verified=False,
+    )
+
+
+@router.get(
+    "/v3/receipts/{receipt_id}",
+    response_model=V3AnchorReceiptLookupResponse,
+)
+def v3_proof_receipt_lookup(
+    receipt_id: str,
+    transaction_hash: str | None = Query(default=None, max_length=66),
+    _: Principal = Depends(require_proof_receipt_reader),
+    settings: Settings = Depends(get_settings),
+) -> V3AnchorReceiptLookupResponse:
+    """Authorized read-only lookup for development-only V3 blockchain receipts."""
+    if not _BYTES32_HEX_PATTERN.fullmatch(receipt_id):
+        return V3AnchorReceiptLookupResponse(
+            state=ChainReceiptLookupState.INVALID_RECEIPT_ID.value,
+            detail="Receipt identifier must be a 32-byte hexadecimal value.",
+            rpc_available=False,
+            contract_identity_verified=False,
+            event_verified=False,
+        )
+
+    if (
+        transaction_hash is not None
+        and not _BYTES32_HEX_PATTERN.fullmatch(transaction_hash)
+    ):
+        return V3AnchorReceiptLookupResponse(
+            state=ChainReceiptLookupState.INVALID_TRANSACTION_HASH.value,
+            detail="Transaction hash must be a 32-byte hexadecimal value.",
+            rpc_available=False,
+            contract_identity_verified=False,
+            receipt_id=receipt_id.lower(),
+            event_verified=False,
+        )
+
+    reader = build_v3_anchor_reader(settings)
+    if reader is None:
+        return V3AnchorReceiptLookupResponse(
+            state=ChainReceiptLookupState.UNCONFIGURED.value,
+            detail="V3 development receipt lookup is not configured.",
+            rpc_available=False,
+            contract_identity_verified=False,
+            receipt_id=receipt_id.lower(),
+            event_verified=False,
+        )
+
+    return _v3_lookup_response(
         reader.inspect_receipt(
             receipt_id=receipt_id,
             transaction_hash=transaction_hash,

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Card } from "../components/ui/Card";
 import { PageHeader } from "../components/ui/PageHeader";
+import { V3DevelopmentReceiptPanel } from "./V3DevelopmentReceiptPanel";
 import { apiClient } from "../services/apiClient";
 import { getErrorMessage } from "../utils/errors";
 import { getV2LookupErrorMessage } from "../utils/trustLookup";
@@ -243,7 +244,7 @@ export function BlockchainTrustPage() {
     <div className="grid gap-6">
       <PageHeader
         title="Blockchain & ZKP Trust"
-        description="Read-only V2 receipt lookup and historical blockchain/ZKP evidence."
+        description="Read-only V2 and development-only V3 receipt lookups, plus historical blockchain/ZKP evidence."
       />
 
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -259,6 +260,8 @@ export function BlockchainTrustPage() {
           Refresh verification
         </button>
       </div>
+
+      <V3DevelopmentReceiptPanel />
 
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">

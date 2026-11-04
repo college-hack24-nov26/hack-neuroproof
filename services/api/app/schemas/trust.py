@@ -55,3 +55,23 @@ class V2AnchorReceiptLookupResponse(BaseModel):
     event_verified: bool
     offchain_groth16_verified: bool
     onchain_groth16_verified: Literal[False] = False
+
+
+class V3AnchorReceiptMetadataResponse(V2AnchorReceiptMetadataResponse):
+    """Development-only on-chain receipt metadata."""
+
+    attestation_status: Literal["development_synthetic_offchain_verified"]
+
+
+class V3AnchorReceiptLookupResponse(V2AnchorReceiptLookupResponse):
+    """V3 receipt lookup; never claims on-chain Groth16 verification."""
+
+    receipt: V3AnchorReceiptMetadataResponse | None = None
+    verified_classification: Literal[
+        "development_synthetic_offchain_verified"
+    ] | None = None
+    development_only: Literal[True] = True
+    production_eligible: Literal[False] = False
+    # The chain reader does not independently re-verify the private proof.
+    offchain_groth16_verified: Literal[False] = False
+    onchain_groth16_verified: Literal[False] = False

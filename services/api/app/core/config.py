@@ -126,6 +126,15 @@ class Settings:
     proof_receipt_anchor_required_confirmations: int = 1
     proof_receipt_anchor_timeout_seconds: int = 3
 
+    # Separate development-only V3 receipt reader.
+    proof_receipt_v3_rpc_url: str | None = None
+    proof_receipt_v3_expected_chain_id: int | None = None
+    proof_receipt_v3_contract_address: str | None = None
+    proof_receipt_v3_runtime_code_sha256: str | None = None
+    proof_receipt_v3_abi_version: str | None = None
+    proof_receipt_v3_required_confirmations: int = 1
+    proof_receipt_v3_timeout_seconds: int = 3
+
     @classmethod
     def from_environment(cls) -> "Settings":
         """Build settings from environment variables without reading secret values."""
@@ -205,6 +214,29 @@ class Settings:
                 "CEREBRACHAIN_PROOF_RECEIPT_ANCHOR_TIMEOUT_SECONDS",
                 3,
             ),
+            proof_receipt_v3_rpc_url=_optional_value(
+                "CEREBRACHAIN_PROOF_RECEIPT_V3_RPC_URL"
+            ),
+            proof_receipt_v3_expected_chain_id=_optional_positive_int(
+                "CEREBRACHAIN_PROOF_RECEIPT_V3_EXPECTED_CHAIN_ID"
+            ),
+            proof_receipt_v3_contract_address=_optional_value(
+                "CEREBRACHAIN_PROOF_RECEIPT_V3_CONTRACT_ADDRESS"
+            ),
+            proof_receipt_v3_runtime_code_sha256=_optional_value(
+                "CEREBRACHAIN_PROOF_RECEIPT_V3_RUNTIME_CODE_SHA256"
+            ),
+            proof_receipt_v3_abi_version=_optional_value(
+                "CEREBRACHAIN_PROOF_RECEIPT_V3_ABI_VERSION"
+            ),
+            proof_receipt_v3_required_confirmations=_positive_int(
+                "CEREBRACHAIN_PROOF_RECEIPT_V3_REQUIRED_CONFIRMATIONS",
+                1,
+            ),
+            proof_receipt_v3_timeout_seconds=_positive_int(
+                "CEREBRACHAIN_PROOF_RECEIPT_V3_TIMEOUT_SECONDS",
+                3,
+            ),
         )
 
     @property
@@ -234,6 +266,19 @@ class Settings:
         """Return whether a protected result-storage root is configured."""
 
         return self.result_storage_dir is not None
+
+    @property
+    def proof_receipt_v3_is_configured(self) -> bool:
+        """Keep V3 deployment configuration separate from V2."""
+        return all(
+            (
+                self.proof_receipt_v3_rpc_url,
+                self.proof_receipt_v3_expected_chain_id,
+                self.proof_receipt_v3_contract_address,
+                self.proof_receipt_v3_runtime_code_sha256,
+                self.proof_receipt_v3_abi_version,
+            )
+        )
 
     @property
     def proof_receipt_anchor_is_configured(self) -> bool:
